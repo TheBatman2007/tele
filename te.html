@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartFem Teleprompter</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: #0a0a0a;
+            color: #ffffff;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        .teleprompter-container {
+            position: relative;
+            width: 100%;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .script-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            position: relative;
+        }
+
+        .script-part {
+            display: none;
+            width: 100%;
+            max-width: 800px;
+            line-height: 2.2;
+            font-size: 24px;
+            text-align: left;
+            font-weight: 300;
+            letter-spacing: 0.5px;
+        }
+
+        .script-part.active {
+            display: block;
+        }
+
+        .script-line {
+            padding: 8px 0;
+            margin: 4px 0;
+            border-radius: 8px;
+            transition: all 0.4s ease;
+            opacity: 0.6;
+            transform: translateX(-10px);
+        }
+
+        .script-line.current {
+            opacity: 1;
+            background: linear-gradient(90deg, rgba(102, 126, 234, 0.2), rgba(118, 75, 162, 0.2));
+            padding: 12px 20px;
+            transform: translateX(0);
+            box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
+            border-left: 4px solid #667eea;
+        }
+
+        .script-line.spoken {
+            opacity: 0.4;
+            color: #888;
+        }
+
+        .settings {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 10px;
+            padding: 10px;
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            z-index: 1000;
+            opacity: 0.6;
+        }
+
+        .setting-item {
+            margin: 6px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .setting-item label {
+            font-size: 10px;
+            min-width: 60px;
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        .setting-item input[type="range"] {
+            width: 80px;
+            accent-color: rgba(102, 126, 234, 0.6);
+        }
+
+        .control-item {
+            margin: 6px 0;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            justify-content: center;
+        }
+
+        .control-item .control-btn {
+            padding: 4px 8px;
+            font-size: 10px;
+        }
+
+        .control-item .part-indicator {
+            margin: 0 4px;
+        }
+
+        .control-btn {
+            background: rgba(102, 126, 234, 0.3);
+            border: none;
+            color: rgba(255, 255, 255, 0.8);
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            box-shadow: none;
+        }
+
+        .control-btn:hover {
+            background: rgba(102, 126, 234, 0.5);
+            color: white;
+        }
+
+        .control-btn:active {
+            transform: none;
+        }
+
+        .control-btn.active {
+            background: rgba(255, 107, 107, 0.4);
+            color: white;
+        }
+
+        .part-indicator {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: 400;
+            font-size: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        .voice-status {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 15px;
+            padding: 15px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .voice-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ff6b6b;
+            animation: pulse 2s infinite;
+        }
+
+        .voice-indicator.listening {
+            background: #51cf66;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .fullscreen-btn {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 12px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 16px;
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+
+        .fullscreen-btn:hover {
+            background: rgba(102, 126, 234, 0.8);
+            transform: scale(1.1);
+        }
+
+        @media (max-width: 768px) {
+            .script-part {
+                font-size: 20px;
+                max-width: 95%;
+            }
+
+            .control-btn {
+                padding: 4px 8px;
+                font-size: 10px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .script-part {
+                font-size: 18px;
+                line-height: 2;
+            }
+
+            .settings, .voice-status {
+                padding: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="teleprompter-container">
+        <button class="fullscreen-btn" onclick="toggleFullscreen()" title="Toggle Fullscreen">⛶</button>
+
+        <div class="script-container">
+            <!-- Part 1 -->
+            <div class="script-part active" id="part1">
+                <div class="script-line">Good morning, I'm Suryansh Yadav. I've always loved building things — robotics, coding, and game development were my hobbies.</div>
+                <div class="script-line">Two years ago, I went to Kota to study. Life there became very intense. I stopped my hobbies, mostly stayed in my room, and focused only on books and sleep. Slowly, I isolated myself and started living in darkness.</div>
+                <div class="script-line">During that time, I kept a pet rabbit, Kanha, for company. One day, I completely forgot to feed him for 24 hours because I was lost in myself. His health got worse, and I had to send him to a zoo. Losing him taught me how isolation and lack of support can affect life.</div>
+                <div class="script-line">After two months, my physics teacher noticed I had missed several tests and came to my room. She encouraged me to restart my hobbies and offered me a small team 3 girls and 2 boys. I taught them robotics and coding from scratch, and together we prepared for a competition in Jaipur. We were in 9th grade, but we defeated teams from IIT Kanpur and many others.</div>
+                <div class="script-line">During that event, one of my female teammates got her first period. She was nervous, unprepared, and scared. That night, we discussed how huge the problem is — there's no real innovation, no safety, and millions of women face this every month.</div>
+                <div class="script-line">It wasn't just that even simple things like going out safely were a challenge. On one trip, some drunk men misbehaved with our senior didi while she was returning from an outing. That made us realize how much this issue affects women's everyday life from safety to hygiene and how little effort is put into solving it.</div>
+                <div class="script-line">That's when I decided to build something that actually makes a difference.</div>
+            </div>
+
+            <!-- Part 2 -->
+            <div class="script-part" id="part2">
+                <div class="script-line">The SmartFem designed for women, with health and comfort in mind.</div>
+                <div class="script-line">A smart menstrual cup that tracks cycles, monitors pH, and helps stay safe and stress-free.</div>
+                <div class="script-line">And here's the challenge we often overlook.</div>
+                <div class="script-line">Periods are often seen as just a personal issue, but they have a much bigger impact. Menstrual hygiene isn't only about health it's a growing environmental and social crisis worldwide.</div>
+                <div class="script-line">Every year, billions of disposable pads and tampons are thrown away, ending up in landfills, oceans, and rivers. Made of plastic and chemicals, some take up to 800 years to break down.</div>
+                <div class="script-line">One woman alone uses over 10,000 menstrual products in her lifetime just one person. Imagine the mountains of waste, releasing toxic chemicals into soil and water. Drainage systems clog, landfills overflow, and in rural areas, burning or burying these products pollutes the environment further.</div>
+                <div class="script-line">It's not just the planet poor awareness, sanitation, and access lead to unsafe practices. Many women reuse disposables or face infections. Emotional stress, stigma, and discomfort are common every month.</div>
+                <div class="script-line">So, this isn't just about pads or products it's about how we care for ourselves and our planet.</div>
+            </div>
+
+            <!-- Part 3 -->
+            <div class="script-part" id="part3">
+                <div class="script-line">Now that we've seen the problem, here's our solution — SmartFem Cup.</div>
+                <div class="script-line">A complete period care system built with advanced intelligence, sustainability, and privacy-first architecture.</div>
+                <div class="script-line">Made from medical-grade silicone with a UV-C self-sterilization case, it integrates with Artemis AI a fine-tuned, open-source neural framework enhanced with federated learning and graph-based analytics for cycle tracking, emergency alerts, SOS transmission, and real-time health monitoring.</div>
+                <div class="script-line">The SOS module uses an Iridium satellite transceiver and connects via BLE and GNSS protocols, ensuring global coverage through LEO constellations even if your phone has no mobile or Wi-Fi network.</div>
+                <div class="script-line">It reduces waste from over 10,000 pads in a lifetime, prevents infections, and lasts over 10 years. Our packaging is fully biodegradable and embedded with seed-growth tech that turns into flowers.</div>
+                <div class="script-line">We empower women through our donate-a-cup initiative, mesh-based support networks, and voice-assisted interfaces, while securing all personal data including SOS packets and location metadata with AES-256 encryption.</div>
+            </div>
+
+            <!-- Part 4 -->
+            <div class="script-part" id="part4">
+                <div class="script-line">Now let's see the 3D model and PCB of the product.</div>
+                <div class="script-line">It tracks real-time health data, ensures hygiene with UV sterilization, and charges wirelessly both standard and fast.</div>
+                <div class="script-line">Every component is built for efficiency and reliability.</div>
+            </div>
+
+            <!-- Part 5 -->
+            <div class="script-part" id="part5">
+                <div class="script-line">Now that you've seen how the SmartFem Infinity X works and what makes it unique, let me show you a quick video we created to explain it better.</div>
+                <div class="script-line">I have created it with the help of my friend. With your permission, I'd like to show this video now.</div>
+            </div>
+
+            <!-- Part 6 -->
+            <div class="script-part" id="part6">
+                <div class="script-line">That's all from my side. I hope this gave you a clear idea of how the SmartFem Infinity X is redefining menstrual care. I'm happy to take any questions you have.</div>
+            </div>
+        </div>
+
+        <div class="voice-status" id="voiceStatus">
+            <div class="voice-indicator" id="voiceIndicator"></div>
+            <span id="voiceText">Voice Recognition Off</span>
+        </div>
+
+        <div class="settings">
+            <div class="control-item">
+                <button class="control-btn" onclick="previousPart()">← Prev</button>
+                <div class="part-indicator" id="partIndicator">Part 1 of 6</div>
+                <button class="control-btn" onclick="nextPart()">Next →</button>
+            </div>
+            <div class="control-item">
+                <button class="control-btn" id="voiceBtn" onclick="toggleVoice()">🎤 Start Voice</button>
+            </div>
+            <div class="setting-item">
+                <label>Font Size:</label>
+                <input type="range" id="fontSizeSlider" min="16" max="36" value="24" onchange="updateFontSize(this.value)">
+            </div>
+            <div class="setting-item">
+                <label>Scroll Speed:</label>
+                <input type="range" id="scrollSpeedSlider" min="0.5" max="3" step="0.1" value="1" onchange="updateScrollSpeed(this.value)">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentPart = 1;
+        let currentLine = 0;
+        let isVoiceActive = false;
+        let recognition;
+        let scrollSpeed = 1;
+
+        const partTexts = {
+            1: [
+                "good morning i'm suryansh yadav i've always loved building things robotics coding and game development were my hobbies",
+                "two years ago i went to kota to study life there became very intense i stopped my hobbies mostly stayed in my room and focused only on books and sleep slowly i isolated myself and started living in darkness",
+                "during that time i kept a pet rabbit kanha for company one day i completely forgot to feed him for 24 hours because i was lost in myself his health got worse and i had to send him to a zoo losing him taught me how isolation and lack of support can affect life",
+                "after two months my physics teacher noticed i had missed several tests and came to my room she encouraged me to restart my hobbies and offered me a small team 3 girls and 2 boys i taught them robotics and coding from scratch and together we prepared for a competition in jaipur we were in 9th grade but we defeated teams from iit kanpur and many others",
+                "during that event one of my female teammates got her first period she was nervous unprepared and scared that night we discussed how huge the problem is there's no real innovation no safety and millions of women face this every month",
+                "it wasn't just that even simple things like going out safely were a challenge on one trip some drunk men misbehaved with our senior didi while she was returning from an outing that made us realize how much this issue affects women's everyday life from safety to hygiene and how little effort is put into solving it",
+                "that's when i decided to build something that actually makes a difference"
+            ],
+            2: [
+                "the smartfem designed for women with health and comfort in mind",
+                "a smart menstrual cup that tracks cycles monitors ph and helps stay safe and stress-free",
+                "and here's the challenge we often overlook",
+                "periods are often seen as just a personal issue but they have a much bigger impact menstrual hygiene isn't only about health it's a growing environmental and social crisis worldwide",
+                "every year billions of disposable pads and tampons are thrown away ending up in landfills oceans and rivers made of plastic and chemicals some take up to 800 years to break down",
+                "one woman alone uses over 10000 menstrual products in her lifetime just one person imagine the mountains of waste releasing toxic chemicals into soil and water drainage systems clog landfills overflow and in rural areas burning or burying these products pollutes the environment further",
+                "it's not just the planet poor awareness sanitation and access lead to unsafe practices many women reuse disposables or face infections emotional stress stigma and discomfort are common every month",
+                "so this isn't just about pads or products it's about how we care for ourselves and our planet"
+            ],
+            3: [
+                "now that we've seen the problem here's our solution smartfem cup",
+                "a complete period care system built with advanced intelligence sustainability and privacy-first architecture",
+                "made from medical-grade silicone with a uv-c self-sterilization case it integrates with artemis ai a fine-tuned open-source neural framework enhanced with federated learning and graph-based analytics for cycle tracking emergency alerts sos transmission and real-time health monitoring",
+                "the sos module uses an iridium satellite transceiver and connects via ble and gnss protocols ensuring global coverage through leo constellations even if your phone has no mobile or wi-fi network",
+                "it reduces waste from over 10000 pads in a lifetime prevents infections and lasts over 10 years our packaging is fully biodegradable and embedded with seed-growth tech that turns into flowers",
+                "we empower women through our donate-a-cup initiative mesh-based support networks and voice-assisted interfaces while securing all personal data including sos packets and location metadata with aes-256 encryption"
+            ],
+            4: [
+                "now let's see the 3d model and pcb of the product",
+                "it tracks real-time health data ensures hygiene with uv sterilization and charges wirelessly both standard and fast",
+                "every component is built for efficiency and reliability"
+            ],
+            5: [
+                "now that you've seen how the smartfem infinity x works and what makes it unique let me show you a quick video we created to explain it better",
+                "i have created it with the help of my friend with your permission i'd like to show this video now"
+            ],
+            6: [
+                "that's all from my side i hope this gave you a clear idea of how the smartfem infinity x is redefining menstrual care i'm happy to take any questions you have"
+            ]
+        };
+
+        // Initialize Speech Recognition
+        function initializeSpeechRecognition() {
+            if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+                recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+                recognition.continuous = true;
+                recognition.interimResults = true;
+                recognition.lang = 'en-US';
+
+                recognition.onstart = function() {
+                    document.getElementById('voiceIndicator').classList.add('listening');
+                    document.getElementById('voiceText').textContent = 'Listening...';
+                };
+
+                recognition.onend = function() {
+                    document.getElementById('voiceIndicator').classList.remove('listening');
+                    document.getElementById('voiceText').textContent = 'Voice Recognition Off';
+                    if (isVoiceActive) {
+                        setTimeout(() => recognition.start(), 100);
+                    }
+                };
+
+                recognition.onresult = function(event) {
+                    let transcript = '';
+                    let interimTranscript = '';
+                    
+                    for (let i = event.resultIndex; i < event.results.length; i++) {
+                        const result = event.results[i];
+                        if (result.isFinal) {
+                            transcript += result[0].transcript.toLowerCase().trim();
+                        } else {
+                            interimTranscript += result[0].transcript.toLowerCase().trim();
+                        }
+                    }
+                    
+                    // Use both final and interim results for better responsiveness
+                    const textToProcess = transcript || interimTranscript;
+                    
+                    if (textToProcess && textToProcess.length > 3) {
+                        console.log('Processing speech:', textToProcess);
+                        matchSpeechToScript(textToProcess);
+                        
+                        // Update voice status with current speech
+                        document.getElementById('voiceText').textContent = `Listening: "${textToProcess.substring(0, 30)}..."`;
+                    }
+                };
+
+                recognition.onerror = function(event) {
+                    console.log('Speech recognition error:', event.error);
+                };
+            }
+        }
+
+        // Match speech to script and scroll accordingly
+        function matchSpeechToScript(spokenText) {
+            const currentPartText = partTexts[currentPart];
+            let bestMatch = -1;
+            let bestScore = 0;
+
+            console.log('Spoken text:', spokenText); // Debug log
+
+            // Enhanced word matching algorithm with better scoring
+            for (let i = currentLine; i < currentPartText.length; i++) {
+                const lineText = currentPartText[i];
+                const spokenWords = spokenText.split(' ').filter(word => word.length > 2);
+                const lineWords = lineText.split(' ');
+                
+                let matches = 0;
+                let consecutiveMatches = 0;
+                let maxConsecutive = 0;
+                
+                // Check for word matches
+                spokenWords.forEach((spokenWord, idx) => {
+                    const found = lineWords.some(lineWord => {
+                        return lineWord.includes(spokenWord) || spokenWord.includes(lineWord);
+                    });
+                    
+                    if (found) {
+                        matches++;
+                        consecutiveMatches++;
+                        maxConsecutive = Math.max(maxConsecutive, consecutiveMatches);
+                    } else {
+                        consecutiveMatches = 0;
+                    }
+                });
+                
+                // Calculate score with bonus for consecutive matches and proximity to current line
+                const baseScore = matches / Math.max(spokenWords.length, 1);
+                const consecutiveBonus = maxConsecutive * 0.2;
+                const proximityBonus = i === currentLine ? 0.3 : (i === currentLine + 1 ? 0.2 : 0);
+                const score = baseScore + consecutiveBonus + proximityBonus;
+                
+                console.log(`Line ${i}: "${lineText.substring(0, 50)}..." - Score: ${score.toFixed(2)}`);
+                
+                if (score > bestScore && score > 0.4) {
+                    bestScore = score;
+                    bestMatch = i;
+                }
+            }
+
+            // Also check a few lines back in case we missed something
+            if (bestMatch === -1 && currentLine > 0) {
+                const startCheck = Math.max(0, currentLine - 2);
+                for (let i = startCheck; i < currentLine; i++) {
+                    const lineText = currentPartText[i];
+                    const spokenWords = spokenText.split(' ').filter(word => word.length > 2);
+                    
+                    let matches = 0;
+                    spokenWords.forEach(spokenWord => {
+                        if (lineText.includes(spokenWord)) {
+                            matches++;
+                        }
+                    });
+                    
+                    const score = matches / Math.max(spokenWords.length, 1);
+                    if (score > bestScore && score > 0.6) {
+                        bestScore = score;
+                        bestMatch = i;
+                    }
+                }
+            }
+
+            console.log(`Best match: Line ${bestMatch}, Score: ${bestScore.toFixed(2)}`);
+
+            if (bestMatch >= 0 && bestMatch !== currentLine) {
+                scrollToLine(bestMatch);
+            }
+        }
+
+        // Scroll to specific line
+        function scrollToLine(lineIndex) {
+            const lines = document.querySelectorAll(`#part${currentPart} .script-line`);
+            
+            // Remove previous highlighting
+            lines.forEach((line, index) => {
+                line.classList.remove('current', 'spoken');
+                if (index < lineIndex) {
+                    line.classList.add('spoken');
+                }
+            });
+
+            // Highlight current line
+            if (lines[lineIndex]) {
+                lines[lineIndex].classList.add('current');
+                lines[lineIndex].scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center'
+                });
+                currentLine = lineIndex;
+            }
+        }
+
+        // Toggle voice recognition
+        function toggleVoice() {
+            const voiceBtn = document.getElementById('voiceBtn');
+            
+            if (!isVoiceActive) {
+                isVoiceActive = true;
+                recognition.start();
+                voiceBtn.textContent = '🎤 Stop Voice';
+                voiceBtn.classList.add('active');
+            } else {
+                isVoiceActive = false;
+                recognition.stop();
+                voiceBtn.textContent = '🎤 Start Voice';
+                voiceBtn.classList.remove('active');
+            }
+        }
+
+        // Navigation functions
+        function nextPart() {
+            if (currentPart < 6) {
+                currentPart++;
+                updatePart();
+            }
+        }
+
+        function previousPart() {
+            if (currentPart > 1) {
+                currentPart--;
+                updatePart();
+            }
+        }
+
+        function updatePart() {
+            // Hide all parts
+            document.querySelectorAll('.script-part').forEach(part => {
+                part.classList.remove('active');
+            });
+            
+            // Show current part
+            document.getElementById(`part${currentPart}`).classList.add('active');
+            
+            // Update indicator
+            document.getElementById('partIndicator').textContent = `Part ${currentPart} of 6`;
+            
+            // Reset line tracking
+            currentLine = 0;
+            
+            // Reset line highlighting
+            document.querySelectorAll('.script-line').forEach(line => {
+                line.classList.remove('current', 'spoken');
+            });
+        }
+
+        // Settings functions
+        function updateFontSize(size) {
+            document.querySelectorAll('.script-part').forEach(part => {
+                part.style.fontSize = size + 'px';
+            });
+        }
+
+        function updateScrollSpeed(speed) {
+            scrollSpeed = parseFloat(speed);
+        }
+
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+            } else {
+                document.exitFullscreen();
+            }
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(event) {
+            switch(event.key) {
+                case 'ArrowLeft':
+                    previousPart();
+                    break;
+                case 'ArrowRight':
+                    nextPart();
+                    break;
+                case ' ':
+                    event.preventDefault();
+                    toggleVoice();
+                    break;
+                case 'f':
+                case 'F':
+                    toggleFullscreen();
+                    break;
+                case 'Escape':
+                    if (isVoiceActive) {
+                        toggleVoice();
+                    }
+                    break;
+            }
+        });
+
+        // Initialize everything when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeSpeechRecognition();
+            updatePart();
+        });
+
+        // Touch/click events for mobile
+        let touchStartY = 0;
+        document.addEventListener('touchstart', function(e) {
+            touchStartY = e.touches[0].clientY;
+        });
+
+        document.addEventListener('touchend', function(e) {
+            const touchEndY = e.changedTouches[0].clientY;
+            const diff = touchStartY - touchEndY;
+            
+            if (Math.abs(diff) > 50) {
+                if (diff > 0) {
+                    nextPart();
+                } else {
+                    previousPart();
+                }
+            }
+        });
+    </script>
+</body>
+</html>
