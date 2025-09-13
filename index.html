@@ -74,6 +74,28 @@
             color: #888;
         }
 
+        .word {
+            transition: all 0.3s ease;
+            padding: 2px 1px;
+        }
+
+        .word.spoken {
+            color: #888;
+            opacity: 0.7;
+        }
+
+        .word.current {
+            background: rgba(102, 126, 234, 0.4);
+            font-weight: bold;
+            border-radius: 4px;
+            color: #fff;
+        }
+
+        .word.next {
+            background: rgba(118, 75, 162, 0.2);
+            color: #ddd;
+        }
+
         .settings {
             position: fixed;
             bottom: 20px;
@@ -321,10 +343,12 @@
 
     <script>
         let currentPart = 1;
-        let currentLine = 0;
+        let currentWordIndex = 0;
         let isVoiceActive = false;
         let recognition;
         let scrollSpeed = 1;
+        let scriptWords = []; // Array of all words in current part for matching
+        let wordElements = []; // Array of span elements for words
 
         const partTexts = {
             1: [
@@ -368,13 +392,73 @@
             ]
         };
 
+        // Simple Levenshtein distance for fuzzy matching
+        function levenshteinDistance(a, b) {
+            const matrix = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+            for (let j = 1; j <= b.length; j++) {
+                matrix[0][j] = j;
+            }
+            for (let i = 1; i <= a.length; i++) {
+                for (let j = 1; j <= b.length; j++) {
+                    const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+                    matrix[i][j] = Math.min(
+                        matrix[i - 1][j] + 1,
+                        matrix[i][j - 1] + 1,
+                        matrix[i - 1][j - 1] + cost
+                    );
+                }
+            }
+            return matrix[a.length][b.length];
+        }
+
+        // Check if two words are similar (handles accents/mispronunciations)
+        function wordsSimilar(word1, word2, threshold = 0.6) {
+            if (word1 === word2) return true;
+            if (Math.abs(word1.length - word2.length) > 3) return false;
+            const dist = levenshteinDistance(word1, word2);
+            const similarity = 1 - (dist / Math.max(word1.length, word2.length));
+            return similarity >= threshold;
+        }
+
+        // Process script to wrap words in spans and build normalized word list
+        function processScriptPart(partId) {
+            const part = document.getElementById(`part${partId}`);
+            const lines = part.querySelectorAll('.script-line');
+            scriptWords = [];
+            wordElements = [];
+
+            lines.forEach(line => {
+                const text = line.textContent.trim();
+                const words = text.split(/\s+/);
+                let newContent = '';
+
+                words.forEach((word, index) => {
+                    const cleanWord = word.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+                    if (cleanWord) {
+                        scriptWords.push(cleanWord);
+                        newContent += `<span class="word" data-index="${wordElements.length}">${word}</span> `;
+                        wordElements.push(null); // Placeholder, will set later
+                    }
+                });
+
+                line.innerHTML = newContent.trim();
+            });
+
+            // Now collect the actual span elements
+            const allWords = part.querySelectorAll('.word');
+            allWords.forEach(span => {
+                const index = parseInt(span.dataset.index);
+                wordElements[index] = span;
+            });
+        }
+
         // Initialize Speech Recognition
         function initializeSpeechRecognition() {
             if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
                 recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
                 recognition.continuous = true;
                 recognition.interimResults = true;
-                recognition.lang = 'en-US';
+                recognition.lang = 'en-IN'; // Changed to en-IN for better handling of Indian accents
 
                 recognition.onstart = function() {
                     document.getElementById('voiceIndicator').classList.add('listening');
@@ -402,14 +486,12 @@
                         }
                     }
                     
-                    // Use both final and interim results for better responsiveness
-                    const textToProcess = transcript || interimTranscript;
+                    const textToProcess = (transcript || interimTranscript).replace(/[^a-zA-Z0-9\s]/g, '');
                     
                     if (textToProcess && textToProcess.length > 3) {
                         console.log('Processing speech:', textToProcess);
                         matchSpeechToScript(textToProcess);
                         
-                        // Update voice status with current speech
                         document.getElementById('voiceText').textContent = `Listening: "${textToProcess.substring(0, 30)}..."`;
                     }
                 };
@@ -420,102 +502,71 @@
             }
         }
 
-        // Match speech to script and scroll accordingly
+        // Match speech to script word-by-word with fuzzy logic
         function matchSpeechToScript(spokenText) {
-            const currentPartText = partTexts[currentPart];
-            let bestMatch = -1;
-            let bestScore = 0;
+            const spokenWords = spokenText.split(/\s+/).filter(w => w.length > 2);
+            let tempIndex = currentWordIndex;
+            let matchesFound = 0;
 
-            console.log('Spoken text:', spokenText); // Debug log
-
-            // Enhanced word matching algorithm with better scoring
-            for (let i = currentLine; i < currentPartText.length; i++) {
-                const lineText = currentPartText[i];
-                const spokenWords = spokenText.split(' ').filter(word => word.length > 2);
-                const lineWords = lineText.split(' ');
-                
-                let matches = 0;
-                let consecutiveMatches = 0;
-                let maxConsecutive = 0;
-                
-                // Check for word matches
-                spokenWords.forEach((spokenWord, idx) => {
-                    const found = lineWords.some(lineWord => {
-                        return lineWord.includes(spokenWord) || spokenWord.includes(lineWord);
-                    });
-                    
-                    if (found) {
-                        matches++;
-                        consecutiveMatches++;
-                        maxConsecutive = Math.max(maxConsecutive, consecutiveMatches);
+            spokenWords.forEach(spokenWord => {
+                while (tempIndex < scriptWords.length) {
+                    const scriptWord = scriptWords[tempIndex];
+                    if (wordsSimilar(spokenWord, scriptWord, 0.5)) { // Lowered threshold for accents
+                        matchesFound++;
+                        tempIndex++;
+                        break;
+                    }
+                    // If no match, skip short script words or consider as filler
+                    if (scriptWord.length < 3) {
+                        tempIndex++;
                     } else {
-                        consecutiveMatches = 0;
+                        break; // Stop if no match to prevent skipping too far
                     }
-                });
-                
-                // Calculate score with bonus for consecutive matches and proximity to current line
-                const baseScore = matches / Math.max(spokenWords.length, 1);
-                const consecutiveBonus = maxConsecutive * 0.2;
-                const proximityBonus = i === currentLine ? 0.3 : (i === currentLine + 1 ? 0.2 : 0);
-                const score = baseScore + consecutiveBonus + proximityBonus;
-                
-                console.log(`Line ${i}: "${lineText.substring(0, 50)}..." - Score: ${score.toFixed(2)}`);
-                
-                if (score > bestScore && score > 0.4) {
-                    bestScore = score;
-                    bestMatch = i;
-                }
-            }
-
-            // Also check a few lines back in case we missed something
-            if (bestMatch === -1 && currentLine > 0) {
-                const startCheck = Math.max(0, currentLine - 2);
-                for (let i = startCheck; i < currentLine; i++) {
-                    const lineText = currentPartText[i];
-                    const spokenWords = spokenText.split(' ').filter(word => word.length > 2);
-                    
-                    let matches = 0;
-                    spokenWords.forEach(spokenWord => {
-                        if (lineText.includes(spokenWord)) {
-                            matches++;
-                        }
-                    });
-                    
-                    const score = matches / Math.max(spokenWords.length, 1);
-                    if (score > bestScore && score > 0.6) {
-                        bestScore = score;
-                        bestMatch = i;
-                    }
-                }
-            }
-
-            console.log(`Best match: Line ${bestMatch}, Score: ${bestScore.toFixed(2)}`);
-
-            if (bestMatch >= 0 && bestMatch !== currentLine) {
-                scrollToLine(bestMatch);
-            }
-        }
-
-        // Scroll to specific line
-        function scrollToLine(lineIndex) {
-            const lines = document.querySelectorAll(`#part${currentPart} .script-line`);
-            
-            // Remove previous highlighting
-            lines.forEach((line, index) => {
-                line.classList.remove('current', 'spoken');
-                if (index < lineIndex) {
-                    line.classList.add('spoken');
                 }
             });
 
-            // Highlight current line
-            if (lines[lineIndex]) {
-                lines[lineIndex].classList.add('current');
-                lines[lineIndex].scrollIntoView({
+            console.log(`Matches found: ${matchesFound}, Advancing to: ${tempIndex}`);
+
+            if (matchesFound > 0 && tempIndex > currentWordIndex) {
+                advanceToWord(tempIndex);
+            }
+        }
+
+        // Advance highlighting to a specific word index
+        function advanceToWord(newIndex) {
+            // Clear previous highlights
+            wordElements.forEach((el, idx) => {
+                if (el) {
+                    el.classList.remove('spoken', 'current', 'next');
+                    if (idx < newIndex) {
+                        el.classList.add('spoken');
+                    }
+                }
+            });
+
+            // Set current
+            if (newIndex < wordElements.length && wordElements[newIndex]) {
+                wordElements[newIndex].classList.add('current');
+            }
+
+            // Set next
+            if (newIndex + 1 < wordElements.length && wordElements[newIndex + 1]) {
+                wordElements[newIndex + 1].classList.add('next');
+            }
+
+            // Scroll to current word
+            if (wordElements[newIndex]) {
+                wordElements[newIndex].scrollIntoView({
                     behavior: 'smooth',
                     block: 'center'
                 });
-                currentLine = lineIndex;
+            }
+
+            currentWordIndex = newIndex;
+
+            // Auto-advance to next part if end reached
+            if (currentWordIndex >= scriptWords.length - 1 && currentPart < 6) {
+                nextPart();
             }
         }
 
@@ -563,13 +614,12 @@
             // Update indicator
             document.getElementById('partIndicator').textContent = `Part ${currentPart} of 6`;
             
-            // Reset line tracking
-            currentLine = 0;
+            // Process script for words
+            processScriptPart(currentPart);
             
-            // Reset line highlighting
-            document.querySelectorAll('.script-line').forEach(line => {
-                line.classList.remove('current', 'spoken');
-            });
+            // Reset word index
+            currentWordIndex = 0;
+            advanceToWord(0);
         }
 
         // Settings functions
